@@ -1,0 +1,220 @@
+1. Feed Cache Strategy & Private-Data Leakage
+In the Next.js App Router, combining public cacheable data and private RLS-gated data requires strict isolation to prevent cross-tenant data leaks.
+Comparing Caching Strategies:
+Forcing Dynamic Rendering: Calling cookies() before your Supabase query forces the route to be dynamically rendered, bypassing the Next.js Data Cache
+. This is the safest approach for private data, ensuring that every request executes the Supabase RLS policies against the live database using the active user's session
+. Notably, in Next.js 15, fetch, Route Handlers, and the client router cache are no longer cached by default, making dynamic rendering the standard behavior unless you manually opt in
+.
+unstable_cache: If you choose to cache expensive database queries, using a generic cache key like ['feed'] will result in catastrophic data leakage, as the first team to load the feed will cache their private posts for all subsequent visitors. To prevent this, you must inject the authenticated team_id into the cache key array (e.g., ['feed', team_id]).
+revalidateTag vs revalidatePath: revalidateTag() provides granular, API-level invalidation by purging specific fetch tags across the app without a full-page rebuild
+. revalidatePath() is a blunt instrument that purges the entire page-level cache and the client-side router cache
+. For a mixed feed, revalidateTag('public_posts') is vastly superior because it allows you to refresh the shared public content independently of the user's private data
+.
+The Recommended Strategy: Use a single Server Component that fetches public and private posts independently. Fetch the public posts using native fetch caching tagged with ['public_feed']
+. Fetch the private posts dynamically after calling cookies(), allowing Supabase RLS to securely filter the records
+. Merge and sort the two arrays in the Next.js server before rendering.
+2. Static Public Feed vs Dynamic Authenticated Feed
+The cleanest and most maintainable pattern is to serve both audiences from a single dynamic route.
+The Trade-offs: Attempting to split the feed into a static/ISR route for logged-out users and a dynamic route for logged-in users requires complex middleware redirects to evaluate the user's session and route them accordingly. Furthermore, the moment you call cookies() or validate a JWT to determine if the user is authenticated, Next.js automatically opts the entire route into dynamic rendering anyway
+.
+Serving everything from one dynamic route offers several advantages:
+Correctness & Security: By checking the session dynamically via supabase.auth.getUser() or getClaims() on every request, you ensure that authorization is always accurate and up to date, avoiding scenarios where a recently logged-in user is served a stale, cached logged-out page.
+Targeted Invalidation: When a new public post is created, you only need to call revalidateTag('public_feed')
+. Since the route is dynamic, the next visitor will dynamically fetch their private posts, but the server will instantly reuse the freshly cached public posts, blending high performance with strict data correctness.
+3. Keyset Pagination + Revalidation Interplay
+Cursor Boundaries & revalidatePath: Keyset (or cursor-based) pagination using a created_at descending timestamp interacts perfectly with Next.js revalidation. Unlike OFFSET pagination—where a new post inserted at the top of the feed shifts all subsequent items down and causes duplicates on page 2—keyset pagination anchors the fetch to a specific row.
+If a user is viewing the feed and a new post is inserted, the user's cursor for the "Next Page" (e.g., WHERE created_at < '2026-06-30T10:00:00') remains mathematically valid. When revalidatePath() fires and the user fetches the next page, the database safely returns the older records without duplicating the newly inserted posts.
+Lightweight "New Posts Available" UX Pattern: To provide a perceived realtime experience without the heavy scaling cost of Websockets or Supabase Postgres Changes, you can implement a Server Action Polling Pattern
+:
+The Poller: Create a Next.js Client Component that polls a lightweight Server Action every 15-30 seconds.
+The Query: The Server Action accepts the created_at timestamp of the newest post currently visible in the client's feed. It performs a highly indexed COUNT(*) query in Supabase: SELECT count(*) FROM posts WHERE created_at > latest_timestamp.
+The UX: If the Server Action returns a count greater than 0, the client UI displays a "New posts available (3)" pill at the top of the feed
+.
+The Refresh: When the user clicks the pill, the client fires router.refresh() or a targeted revalidation, which seamlessly patches the new RSC payload into the current UI without losing the user's scroll position
+.
+
+-------------------------------------------------------------------------------------
+Here is the architectural guidance for optimizing your feed queries and securely serving unauthenticated traffic using Supabase RLS.
+4. RLS-on-Table vs SECURITY DEFINER Feed RPC
+When querying a complex, visibility-filtered feed that requires joining 3 or more tables (e.g., posts, teams, and follows), you should implement a hybrid approach: keep RLS enabled on the table, but use a SECURITY DEFINER RPC for the hot feed path.
+The Trade-off: Defense-in-Depth vs. Performance
+Defense-in-Depth (Inline RLS): Keeping RLS enabled on the posts table is a non-negotiable security practice
+. It acts as a universal safety net ensuring that no application bug or direct API call can bypass access controls
+. However, using inline RLS policies with complex, multi-table joins (like checking follow statuses) can severely degrade read performance, sometimes turning a simple query into a slow operation that takes hundreds of milliseconds or even times out
+.
+Query Performance (SECURITY DEFINER RPC): To achieve high performance (<5ms) for the feed, you should expose a SECURITY DEFINER RPC
+. A SECURITY DEFINER function runs with the privileges of the user who created it (usually the table owner), allowing it to completely bypass the RLS overhead on intermediate lookup tables
+.
+Implementing the Hybrid Approach You can and should use both
+. Keep a simple, single-table RLS policy on the posts table (e.g., ensuring a team can only mutate its own posts). Then, point your Next.js application to fetch the feed via the SECURITY DEFINER RPC (get_feed(viewer_team_id, cursor)).
+To ensure this RPC doesn't create a privilege escalation vulnerability, you must manually enforce authorization inside the function body by verifying that the auth.uid() belongs to the viewer_team_id
+. Additionally, you must append SET search_path = '' to the function definition so malicious actors cannot hijack the execution path
+.
+Indexing Recommendations To ensure the get_feed RPC executes in milliseconds, define B-tree indexes on all columns involved in the filtering and joining process
+:
+Join Columns: Index team_id on the posts table, and (follower_id, followed_id) on the follows junction table
+.
+Filter Columns: Index is_public on the teams table.
+Pagination Columns: Index the created_at column in descending order on the posts table to optimize the keyset/cursor pagination bounds.
+5. Anonymous (anon role) Public Feed via RLS
+When serving public data to unauthenticated users, Supabase maps the request to the Postgres anon role
+. Mixing authenticated and anonymous logic into a single RLS policy is a common source of data leaks.
+Guaranteeing Zero Leakage: Dedicated Policies Do not use a single is_public clause blended with your private team logic. If a policy relies on auth.uid() or a helper function like current_user_team_id(), it will return null for unauthenticated users
+. In PostgreSQL, comparing a null value silently evaluates to false
+. While this safely rejects the row, blending these contexts makes your security model brittle.
+To guarantee zero leakage, strictly isolate your policies using the TO clause
+:
+Authenticated Policy: CREATE POLICY "Private access" ON posts FOR SELECT TO authenticated USING (...)
+. This ensures your complex current_user_team_id() logic is never even evaluated for anonymous users
+.
+Anon Policy: CREATE POLICY "Public access" ON posts FOR SELECT TO anon USING (is_public = true)
+. (Note: It is highly recommended to denormalize is_public onto the posts table to avoid joining the teams table for anonymous readers).
+Required GRANTs For the anon role to retrieve data, it needs baseline database permissions before RLS is even evaluated. You must ensure GRANT USAGE ON SCHEMA public TO anon; and GRANT SELECT ON public.posts TO anon; are applied. Without these grants, the database will outright reject the connection before RLS can filter the rows.
+Public View vs RPC vs Direct RLS Relying on direct table RLS (with the TO anon policy) is the most robust and preferred pattern. Exposing an RPC is unnecessary for a simple is_public = true check
+.
+If you decide to use a Public View to format the feed, you must exercise extreme caution. By default in PostgreSQL, views are created as security definer and execute as the user who created them, completely bypassing RLS
+. If you use a view, you must create it with WITH (security_invoker = true) (supported in Postgres 15+)
+. This forces the view to obey the underlying table's RLS policies for the anon role, ensuring private data remains completely hidden
+.
+-------------------------------------------------------------------------------------
+6. Canonical Custom-Claim Propagation into the JWT
+Comparing the Three Approaches:
+(a) Custom Access Token Auth Hook (Recommended): This is the canonical, race-free method for injecting claims into a JWT in modern Supabase architecture
+. A Custom Access Token hook is a PostgreSQL function that executes each time a new JWT is created
+. It allows you to fetch data from your database (like a user's team_id or onboarded status) and attach it directly to the JWT payload before it is cryptographically signed and issued
+.
+(b) updateUserById + refreshSession(): This approach involves updating the user's app_metadata via the Admin API, and then forcing the client to call await supabase.auth.refreshSession()
+. While viable for mid-session tenant switching, it is susceptible to a "freshness window" where the JWT remains stale until the refresh successfully completes
+. If done during the initial login, it introduces race conditions because the server might try to read the token before the client has successfully refreshed it.
+(c) DB Trigger updating raw_app_meta_data: You can write a Postgres trigger on auth.users that updates the raw_app_meta_data column upon user insertion
+. While this ensures the metadata is saved in the database synchronously, it does not guarantee that the exact JWT minting process will capture these changes dynamically if they occur concurrently with token generation. Furthermore, working with this column can be finicky due to naming conventions (raw_app_meta_data vs app_metadata)
+.
+Does getUser() return fresh or stale claims? Calling supabase.auth.getUser() in Next.js middleware makes a network request directly to the Supabase Auth server, meaning it always returns fresh, up-to-date user records, including the latest app_metadata
+. Conversely, methods like getClaims() or getSession() strictly decode the JWT locally without a network request, meaning they will return stale token claims if the database state has changed but the token hasn't been refreshed
+.
+Avoiding Stale Claims After Signup: To avoid a missing or stale claim immediately after signup, you must use the Custom Access Token Auth Hook. Because the hook intercepts the token creation process, it guarantees that the very first access token returned to the Next.js application already contains the team_id and onboarded status
+. This completely eliminates the need for an awkward initial refreshSession() call on the client.
+7. OAuth Callback + Provisioning Race Condition
+When a user signs up via Google OAuth, the system generates an auth.users record and redirects the user to your Next.js App Router /auth/callback/route.ts
+. Using the PKCE (Proof Key for Code Exchange) flow is essential here, as it passes a secure code in the URL query string (?code=...) rather than an inaccessible hash fragment, avoiding infinite authentication loops
+.
+Preventing the Race Condition: To prevent your database provisioning logic and your callback logic from racing, you should rely on a Hybrid Architecture
+:
+The Database Trigger (Transactional Atomicity): Attach a Postgres trigger to execute a SECURITY DEFINER function immediately upon the auth.users row insertion
+. Triggers execute synchronously inside the isolated database transaction
+. Therefore, before Supabase Auth finishes its internal processing and sends the PKCE code back to your Next.js application, the database transaction has already completed, guaranteeing the default team and user profile exist
+.
+The Callback Logic: Because the trigger completed transactionally, your Next.js /auth/callback/route.ts can safely execute exchangeCodeForSession without racing the database
+. During this code exchange, Supabase mints the session. If you have the Custom Access Token Auth Hook configured, it will read the synchronously created team from step 1 and embed the team_id into the JWT seamlessly
+.
+Ensuring Idempotent Provisioning: While the database trigger handles the minimum viable setup
+, your Next.js application will handle multi-step onboarding (e.g., Stripe billing, workspace customization)
+. To ensure this application-layer provisioning is completely idempotent (meaning a user can refresh the page or retry the onboarding without causing duplicate data), you must execute database mutations using PostgreSQL's speculative insertion pipeline: INSERT ... ON CONFLICT DO NOTHING
+.
+By using ON CONFLICT DO NOTHING, you avoid standard try/catch blocks that catch UNIQUE_VIOLATION errors. This speculative pre-check ensures that returning logins or interrupted signups won't exhaust transaction IDs or create database bloat (dead tuples), maintaining strict data integrity and high performance regardless of how many times the user hits the onboarding routes
+.
+-------------------------------------------------------------------------------------
+Here is the architectural guidance for your messaging system.
+Please note: While I will draw heavily on the provided sources regarding Supabase Realtime, PostgreSQL joins, and RLS, the specific architectural comparison for inbox sorting (lateral joins vs. triggers for messaging) relies on standard PostgreSQL engineering principles that fall outside of your provided sources. I have indicated this where applicable, and you may want to independently verify the implementation specifics.
+8. Realtime Mechanism for Team-Scoped Chat
+For a team-to-team direct messaging system, Postgres Changes is the recommended mechanism for an MVP, though Broadcast from Database scales better long-term.
+Comparing the Mechanisms & Setup Complexity:
+Postgres Changes: This system allows clients to directly subscribe to INSERT, UPDATE, or DELETE events on PostgreSQL tables
+. It is explicitly designed for use cases like "chats stored as rows in tables"
+. For an MVP with a small fan-out (e.g., just two teams per conversation), this is highly recommended because the setup complexity is minimal
+.
+Broadcast from Database: You can emit custom messages directly from database triggers using realtime.send() or realtime.broadcast_changes()
+. Supabase officially recommends this as "the more scalable way to fan out database changes to clients"
+. However, it comes with a higher setup complexity because you must manually wire the database triggers to emit the payloads.
+RLS and Realtime Authorization:
+Postgres Changes (Simpler): Realtime subscriptions automatically respect your table's existing Row Level Security (RLS) policies
+. Clients will only receive change events for rows they are explicitly permitted to SELECT
+. There is no extra setup needed—if your RLS policy says Team A can only read messages in Conversation X, Supabase Realtime handles the filtering automatically
+.
+Broadcast (More Complex): Because Broadcast uses transient channels, it bypasses standard table RLS. To secure it, you must use Realtime Authorization
+. This requires you to create dedicated RLS policies on a system table called realtime.messages, configure your clients to subscribe with private: true, and ensure the client passes a valid auth token
+.
+Channel Topic Conventions: For either approach, you should scope your topics/channels to the specific entity to avoid sending unnecessary data to the client. A standard convention would be scoping the channel to the conversation ID (e.g., room:conversation_123 or messages:conversation_123).
+9. Inbox Ordering by Latest Message
+(Note: The following architectural comparison applies standard PostgreSQL performance principles to your specific inbox sorting use case, which goes beyond the provided sources).
+To display a conversation list ordered by the newest message timestamp, here is how the three approaches compare for an MVP:
+1. Lateral Join / Correlated Subquery (Recommended for MVP) You query the conversations table and use a LEFT JOIN LATERAL
+ to fetch the MAX(created_at) from the messages table at read time.
+Correctness: 100% correct and always perfectly in sync.
+Write-Amplification: Zero. Inserting a message only writes to the messages table.
+Read Performance: Good for an MVP, provided you add a composite B-tree index on (conversation_id, created_at DESC). As the messages table grows massive, this query will eventually slow down, but it prevents early architectural bloat.
+2. Denormalized last_message_at via AFTER INSERT Trigger You add a last_message_at timestamp on the conversations table and use a Postgres trigger to update it whenever a new message is inserted.
+Read Performance: Extremely fast, as you simply ORDER BY last_message_at DESC directly on the conversations table without joining.
+Write-Amplification: High. Every single message sent requires writing to the messages heap and updating the conversations heap. In PostgreSQL, an UPDATE actually inserts a new row version and marks the old one as dead
+. In high-throughput chat, this rapid updating generates constant dead tuples on the conversations table, requiring aggressive autovacuuming to prevent database bloat
+.
+Correctness: High, assuming the trigger is written correctly and fires reliably.
+3. View / Materialized View
+Standard View: A standard view is just a saved query
+. It offers no performance benefit over the Lateral Join. Furthermore, you must explicitly create the view with security_invoker = true (Postgres 15+) or it will execute as the Postgres admin and completely bypass your RLS policies
+.
+Materialized View: This physicalizes the view data to disk for fast reads. However, it requires manual or scheduled refreshes. Because chat apps require real-time accuracy, serving a stale, un-refreshed materialized view to users is a bad UX pattern.
+MVP Recommendation & Trigger Pattern For an MVP, the Lateral Join is the best approach. It avoids the heavy write-amplification of triggers and the caching latency of materialized views.
+However, if your inbox read latency begins to degrade and you decide to denormalize for performance, here is the standard PostgreSQL trigger pattern you would use (external knowledge):
+-- 1. Create the function to update the parent conversation
+CREATE OR REPLACE FUNCTION update_conversation_timestamp() 
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE conversations 
+  SET last_message_at = NEW.created_at 
+  WHERE id = NEW.conversation_id;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 2. Bind the trigger to run after every message insert
+CREATE TRIGGER on_new_message
+AFTER INSERT ON messages
+FOR EACH ROW 
+EXECUTE FUNCTION update_conversation_timestamp();
+-------------------------------------------------------------------------------------
+(i) Data Model: Follow Modeling, Constraints, and RLS
+A single follows table with a status enum (e.g., pending, approved, rejected) is significantly better than maintaining separate follows and follow_requests tables. Using a single table prevents data anomalies (such as a team having both a pending request and an active follow simultaneously) and guarantees a single source of truth, aligning with the need for strict data integrity and simple, explicit logic
+.
+Cleanest Database Constraints To ensure structural integrity regardless of application logic, you must enforce the following database-level constraints:
+Prevent Duplicates: Apply a composite UNIQUE (follower_id, followed_id) constraint
+. This guarantees only one relationship state can exist between any two teams at a given time.
+Prevent Self-Follows: Add a CHECK (follower_id != followed_id) constraint to prevent teams from following themselves
+. (Note: Unlike the 1-to-1 messaging constraint discussed earlier, do not enforce a sorting invariant here because following is strictly one-directional).
+RLS Policies and Column-Level Security To properly restrict operations:
+INSERT: Users can only insert rows where follower_id equals their active team_id.
+DELETE (Unfollow/Cancel): Users can only delete rows where follower_id equals their active team_id.
+UPDATE (Approve/Reject): To ensure a target team can only update the status column and cannot maliciously modify the follower_id or followed_id, Row-Level Security (RLS) alone is insufficient because RLS operates on rows, not columns. You should implement Column-Level Privileges. Revoke general update access to the table, and explicitly grant update access only to the status column: GRANT UPDATE (status) ON follows TO authenticated;. Then, apply an RLS UPDATE policy ensuring the user belongs to the followed_id team.
+Retroactive Public → Private Toggle: If a team switches from public to private, existing approved follows remain intact in the follows table. New followers will simply be inserted with a pending status based on the target team's new privacy setting.
+(ii) Mutation Pattern in Next.js 15 App Router
+Server Actions are the strongly preferred mutation pattern in Next.js 15 over Route Handlers
+. They provide maximum colocation, eliminate the need for a separate API client, and offer automatic end-to-end TypeScript safety
+.
+Recommended Error-Handling & Revalidation Pattern Because Server Actions act as public HTTP POST endpoints, you must treat them as untrusted
+. The optimal pattern involves:
+Validation: Validate all input payload shapes and types securely using Zod inside the Server Action before executing database queries
+.
+Idempotent Mutations: Use speculative insertion (INSERT ... ON CONFLICT DO NOTHING) to handle duplicate follow attempts seamlessly without exhausting database transaction IDs
+.
+Standardized Response Objects: Return a consistent object shape handling both successes and validation errors, such as { success: boolean, message: string, errors?: any }
+.
+React 19 Hooks: On the client, manage the form state using the new useActionState hook (which replaces the deprecated useFormState)
+.
+Non-blocking Transitions: Always wrap your Server Action calls inside startTransition (or rely on useActionState which does this implicitly) to prevent the UI from suspending and blocking the main thread during the network request
+.
+Granular Invalidation: Upon a successful mutation, call revalidateTag() (e.g., revalidateTag('team_follows')) rather than revalidatePath(). This is vastly more efficient because it surgically purges the cached fetch data across all routes (home feed, profile, settings) in a single operation without blindly re-rendering unrelated data
+.
+The Highest-ROI Way to Prove RLS Correctness in 3 Days
+The highest-return investment for validating RLS correctness under a tight deadline is automated testing via pgTAP running inside supabase db test
+.
+While Playwright E2E tests are slow, flaky, and only test the UI layer, and manual impersonation in the Supabase Studio doesn't scale
+, pgTAP allows you to programmatically verify your database logic in milliseconds.
+Execution Strategy: Use the basejump-supabase_test_helpers extension
+. This library allows you to write tests wrapped in BEGIN/ROLLBACK blocks, preventing test data from polluting your database
+. You can use its tests.authenticate_as('user_id') function to rapidly switch user contexts, executing assertions to verify that Team A cannot see Team B's pending follow requests
+.
+Pro Tip: To save even more time, you can leverage community tools like rlsautotest, which automatically parses your schema and generates the pgTAP test boilerplate for every table, role, and CRUD operation
+. This ensures you catch silent RLS failures (like UPDATE silently failing by affecting 0 rows) immediately in CI before they reach your Next.js application
+.
+-------------------------------------------------------------------------------------

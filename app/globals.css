@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* ── Design tokens ──────────────────────────────────────────────────────────
+   A small, neutral palette. Kept intentionally minimal — the brief rewards a
+   clean, readable UI over a heavy design system. Tailwind v4 reads these via
+   the @theme block so utilities like `bg-surface` / `text-muted` work. */
+@theme {
+  --color-bg: #0b0c10;
+  --color-surface: #14161c;
+  --color-surface-2: #1b1e26;
+  --color-border: #2a2e3a;
+  --color-fg: #e7e9ee;
+  --color-muted: #9aa1b1;
+  --color-primary: #6366f1;
+  --color-primary-fg: #ffffff;
+  --color-danger: #ef4444;
+  --color-success: #22c55e;
+  --radius: 0.625rem;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin, unobtrusive scrollbars to match the dark surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* Top-loader: an indeterminate bar over the header's bottom border, shown
+   while a navigation is in flight. Duration is unknown (client nav can
+   resolve instantly or take a beat), so it's a looping sweep, not a fake
+   percentage. */
+@keyframes top-loader-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+.animate-top-loader {
+  animation: top-loader-sweep 1s ease-in-out infinite;
+}
