@@ -13,14 +13,16 @@ import type { FeedItem } from "@/lib/types";
  */
 export function PostCard({ post }: { post: FeedItem }) {
   return (
-    <Card className="p-4">
+    <Card className="p-4 transition-colors hover:border-muted/30">
       <header className="flex items-center gap-3">
-        <Avatar name={post.team_name} />
-        <div className="flex flex-col">
-          <span className="text-sm font-medium">{post.team_name}</span>
-          <span className="text-xs text-muted">{timeAgo(post.created_at)}</span>
+        <Avatar name={post.team_name} size={38} />
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold">{post.team_name}</div>
+          <div className="font-mono text-[11px] text-muted">
+            {timeAgo(post.created_at)}
+          </div>
         </div>
-        <span className="ml-auto">
+        <span className="ml-auto shrink-0">
           {post.is_public ? (
             <Badge tone="public">Public</Badge>
           ) : (
@@ -29,7 +31,9 @@ export function PostCard({ post }: { post: FeedItem }) {
         </span>
       </header>
 
-      <p className="mt-3 whitespace-pre-wrap text-sm">{post.content}</p>
+      <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-fg/95">
+        {post.content}
+      </p>
     </Card>
   );
 }

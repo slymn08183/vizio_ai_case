@@ -39,11 +39,16 @@ export async function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur relative">
+    <header className="sticky top-0 z-20 border-b border-border bg-bg/70 backdrop-blur-md relative">
       <TopLoader />
-      <div className="mx-auto flex h-14 max-w-2xl items-center justify-between gap-4 px-4">
-        <Link href="/" className="font-semibold tracking-tight">
-          Team<span className="text-primary">Social</span>
+      <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-4 px-4">
+        <Link href="/" className="flex items-center gap-2 tracking-tight">
+          <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-accent/15 font-mono text-xs font-bold text-accent">
+            TS
+          </span>
+          <span className="hidden font-semibold sm:inline">
+            Team<span className="text-accent">Social</span>
+          </span>
         </Link>
 
         {!user && (
@@ -58,30 +63,34 @@ export async function SiteHeader() {
         )}
 
         {user && onboarded && (
-          <nav className="flex items-center gap-1 text-sm">
-            <Link href="/" className="rounded-md px-2.5 py-1.5 text-muted hover:bg-surface-2 hover:text-fg">
-              Home
-            </Link>
-            <Link href="/teams" className="rounded-md px-2.5 py-1.5 text-muted hover:bg-surface-2 hover:text-fg">
-              Teams
-            </Link>
-            <Link href="/messages" className="rounded-md px-2.5 py-1.5 text-muted hover:bg-surface-2 hover:text-fg">
-              Messages
-            </Link>
-            <Link href="/requests" className="rounded-md px-2.5 py-1.5 text-muted hover:bg-surface-2 hover:text-fg">
-              Requests
-            </Link>
-            <Link href="/settings" className="rounded-md px-2.5 py-1.5 text-muted hover:bg-surface-2 hover:text-fg">
-              Settings
-            </Link>
-            <div className="mx-1 flex items-center gap-2 border-l border-border pl-3">
-              {teamName && <Avatar name={teamName} size={28} />}
-              <span className="hidden text-xs text-muted sm:inline">
-                Acting as{" "}
-                <span className="font-medium text-fg">{teamName ?? "your team"}</span>
-              </span>
+          <nav className="flex items-center gap-0.5 text-[13px]">
+            {[
+              ["/", "Home"],
+              ["/teams", "Teams"],
+              ["/messages", "Messages"],
+              ["/requests", "Requests"],
+              ["/settings", "Settings"],
+            ].map(([href, label]) => (
+              <Link
+                key={href}
+                href={href}
+                className="rounded-md px-2.5 py-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+              >
+                {label}
+              </Link>
+            ))}
+            <div className="ml-1.5 flex items-center gap-2 border-l border-border pl-2.5">
+              {teamName && (
+                <div className="hidden items-center gap-2 rounded-full border border-border bg-surface-2 py-1 pl-1 pr-3 sm:flex">
+                  <Avatar name={teamName} size={22} />
+                  <span className="text-xs leading-none">
+                    <span className="text-muted">acting as </span>
+                    <span className="font-medium">{teamName}</span>
+                  </span>
+                </div>
+              )}
               <form action={signOut}>
-                <button className="rounded-md px-2 py-1.5 text-xs text-muted hover:text-danger">
+                <button className="rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:text-danger">
                   Sign out
                 </button>
               </form>
@@ -91,7 +100,7 @@ export async function SiteHeader() {
 
         {user && !onboarded && (
           <form action={signOut}>
-            <button className="rounded-md px-2 py-1.5 text-xs text-muted hover:text-danger">
+            <button className="rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:text-danger">
               Sign out
             </button>
           </form>

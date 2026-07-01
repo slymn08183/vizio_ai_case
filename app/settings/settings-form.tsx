@@ -35,7 +35,7 @@ export function SettingsForm({
           name="isPublic"
           value="on"
           defaultChecked={defaultIsPublic}
-          className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+          className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
         />
         <span className="text-sm">
           <span className="font-medium">Make this team public</span>

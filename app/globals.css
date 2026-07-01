@@ -1,21 +1,35 @@
 @import "tailwindcss";
 
-/* ── Design tokens ──────────────────────────────────────────────────────────
-   A small, neutral palette. Kept intentionally minimal — the brief rewards a
-   clean, readable UI over a heavy design system. Tailwind v4 reads these via
-   the @theme block so utilities like `bg-surface` / `text-muted` work. */
+/* ── Design tokens ───────────────────────────────────────────────────────────
+   "Roster / control room": a calm, layered dark slate shell so the colour story
+   can belong to the TEAMS, not the chrome. Each team gets a deterministic hue
+   (see lib/utils teamHue) rendered on its monogram crest — that per-team colour
+   is the one bold thing; everything else stays disciplined. Primary actions are
+   inverted (near-white) for a premium, non-neon feel; metadata is set in mono to
+   read like a team/system identity. */
 @theme {
-  --color-bg: #0b0c10;
-  --color-surface: #14161c;
-  --color-surface-2: #1b1e26;
-  --color-border: #2a2e3a;
-  --color-fg: #e7e9ee;
-  --color-muted: #9aa1b1;
-  --color-primary: #6366f1;
-  --color-primary-fg: #ffffff;
-  --color-danger: #ef4444;
-  --color-success: #22c55e;
-  --radius: 0.625rem;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo,
+    Consolas, monospace;
+
+  --color-bg: #0d0f15;
+  --color-surface: #151824;
+  --color-surface-2: #1c202e;
+  --color-border: #262b3a;
+  --color-fg: #e9ebf2;
+  --color-muted: #8e95a8;
+  --color-primary: #f1f3f9; /* inverted button/bubble bg */
+  --color-primary-fg: #111420; /* dark text on inverted surfaces */
+  --color-accent: #7aa2f7; /* links, focus, restrained brand mark */
+  --color-danger: #f4796b;
+  --color-success: #57d3a0;
+
+  --radius: 0.7rem;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 30px -18px rgba(0, 0, 0, 0.75);
+  --shadow-pop: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
 }
 
 :root {
@@ -29,23 +43,58 @@ body {
 
 body {
   background-color: var(--color-bg);
+  /* Ultra-subtle top glow for depth — a quiet "control room" ambience. */
+  background-image: radial-gradient(
+    120% 60% at 50% -10%,
+    rgba(122, 162, 247, 0.06),
+    transparent 60%
+  );
+  background-attachment: fixed;
   color: var(--color-fg);
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Thin, unobtrusive scrollbars to match the dark surface. */
+/* Mono uppercase micro-label used for section eyebrows and metadata. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* Accessible, on-brand focus ring (respects keyboard nav). */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-accent) 30%, transparent);
+  color: var(--color-fg);
+}
+
+/* Thin scrollbars matching the dark surface. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
 
-/* Top-loader: an indeterminate bar over the header's bottom border, shown
-   while a navigation is in flight. Duration is unknown (client nav can
-   resolve instantly or take a beat), so it's a looping sweep, not a fake
-   percentage. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Top-loader: an indeterminate sweep over the header's bottom edge, shown while
+   a navigation is in flight (client nav can resolve instantly or take a beat, so
+   it loops rather than faking a percentage). */
 @keyframes top-loader-sweep {
   0% {
     transform: translateX(-100%);

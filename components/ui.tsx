@@ -1,32 +1,33 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
-import { cn, initials } from "@/lib/utils";
+import { cn, initials, teamCrest } from "@/lib/utils";
 
-// ── Button styling ───────────────────────────────────────────────────────────
-// A single source of button classes so <button>, <Link>, and submit buttons all
-// look identical. Domain components import `buttonClasses` or `<Button>`.
+// ── Buttons ──────────────────────────────────────────────────────────────────
+// One source of button styling. Primary is inverted (near-white) for a premium,
+// non-neon feel; colour on this app belongs to the teams, not the chrome.
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md";
 
 const VARIANTS: Record<Variant, string> = {
-  primary:
-    "bg-primary text-primary-fg hover:opacity-90 disabled:opacity-50",
+  primary: "bg-primary text-primary-fg shadow-sm hover:bg-white",
   secondary:
-    "bg-surface-2 text-fg border border-border hover:bg-surface disabled:opacity-50",
-  ghost: "text-muted hover:text-fg hover:bg-surface-2 disabled:opacity-50",
+    "bg-surface-2 text-fg border border-border hover:bg-surface hover:border-muted/40",
+  ghost: "text-muted hover:text-fg hover:bg-surface-2",
   danger:
-    "bg-transparent text-danger border border-border hover:bg-surface-2 disabled:opacity-50",
+    "bg-transparent text-danger border border-border hover:bg-danger/10 hover:border-danger/40",
 };
 
 const SIZES: Record<Size, string> = {
-  sm: "h-8 px-3 text-sm",
+  sm: "h-8 px-3 text-[13px]",
   md: "h-10 px-4 text-sm",
 };
 
 export function buttonClasses(variant: Variant = "primary", size: Size = "md") {
   return cn(
-    "inline-flex items-center justify-center gap-2 rounded-[var(--radius)] font-medium transition-colors disabled:cursor-not-allowed",
+    "inline-flex items-center justify-center gap-2 rounded-[var(--radius)] font-medium",
+    "transition duration-150 active:scale-[0.98]",
+    "disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 disabled:hover:bg-primary",
     VARIANTS[variant],
     SIZES[size],
   );
@@ -66,7 +67,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-[var(--radius)] border border-border bg-surface",
+        "rounded-[var(--radius)] border border-border bg-surface shadow-card",
         className,
       )}
     >
@@ -83,16 +84,16 @@ export function Badge({
   tone?: "neutral" | "public" | "private" | "pending" | "success";
 }) {
   const tones: Record<string, string> = {
-    neutral: "bg-surface-2 text-muted",
-    public: "bg-success/15 text-success",
-    private: "bg-surface-2 text-muted",
-    pending: "bg-primary/15 text-primary",
-    success: "bg-success/15 text-success",
+    neutral: "border-border bg-surface-2 text-muted",
+    public: "border-success/25 bg-success/10 text-success",
+    private: "border-border bg-surface-2 text-muted",
+    pending: "border-accent/25 bg-accent/10 text-accent",
+    success: "border-success/25 bg-success/10 text-success",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
         tones[tone],
       )}
     >
@@ -101,11 +102,26 @@ export function Badge({
   );
 }
 
+/**
+ * Team crest — a monogram tile in the team's own deterministic colour (see
+ * teamHue). The rounded-square (not a circle) reads as a team logo/crest, and
+ * the per-team hue is the app's visual signature: every team is recognisable by
+ * colour across the feed, teams list, inbox and threads.
+ */
 export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+  const crest = teamCrest(name);
   return (
     <div
-      className="flex shrink-0 items-center justify-center rounded-full bg-primary/20 font-semibold text-primary"
-      style={{ width: size, height: size, fontSize: size * 0.4 }}
+      className="flex shrink-0 select-none items-center justify-center font-semibold leading-none"
+      style={{
+        width: size,
+        height: size,
+        fontSize: size * 0.4,
+        borderRadius: Math.max(6, size * 0.28),
+        background: crest.bg,
+        color: crest.fg,
+        boxShadow: `inset 0 0 0 1px ${crest.ring}`,
+      }}
       aria-hidden
     >
       {initials(name)}
@@ -123,7 +139,15 @@ export function EmptyState({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-[var(--radius)] border border-dashed border-border px-6 py-12 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-[var(--radius)] border border-dashed border-border bg-surface/40 px-6 py-14 text-center">
+      <div
+        className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-border bg-surface-2 text-muted"
+        aria-hidden
+      >
+        <span className="eyebrow" style={{ letterSpacing: "0.05em" }}>
+          ∅
+        </span>
+      </div>
       <p className="font-medium">{title}</p>
       {hint && <p className="max-w-sm text-sm text-muted">{hint}</p>}
       {children}
@@ -148,7 +172,7 @@ export function Field({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="text-sm font-medium">
+      <label htmlFor={htmlFor} className="text-[13px] font-medium text-fg">
         {label}
       </label>
       {children}
@@ -163,7 +187,7 @@ export function Field({
 }
 
 export const inputClasses =
-  "h-10 w-full rounded-[var(--radius)] border border-border bg-surface-2 px-3 text-sm outline-none placeholder:text-muted focus:border-primary";
+  "h-10 w-full rounded-[var(--radius)] border border-border bg-surface-2 px-3 text-sm outline-none transition-colors placeholder:text-muted focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/20";
 
 export const textareaClasses =
-  "w-full resize-none rounded-[var(--radius)] border border-border bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-primary";
+  "w-full resize-none rounded-[var(--radius)] border border-border bg-surface-2 px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-muted focus:border-accent focus:bg-surface focus:ring-2 focus:ring-accent/20";

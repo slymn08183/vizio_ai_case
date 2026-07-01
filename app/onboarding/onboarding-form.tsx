@@ -31,7 +31,7 @@ export function OnboardingForm({ defaultName }: { defaultName?: string }) {
           type="checkbox"
           name="isPublic"
           value="on"
-          className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+          className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
         />
         <span className="text-sm">
           <span className="font-medium">Make this team public</span>

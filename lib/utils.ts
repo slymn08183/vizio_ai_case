@@ -36,3 +36,29 @@ export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).slice(0, 2);
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
+
+/**
+ * Deterministic hue (0–359) from a team name — the app's visual signature. Every
+ * team carries its own colour on its monogram crest across the feed, teams list,
+ * inbox and threads, so the tenant model ("you act as a team") is legible at a
+ * glance. Same name → same colour, everywhere, with no stored state.
+ */
+export function teamHue(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (h * 31 + name.charCodeAt(i)) % 360;
+  }
+  return h;
+}
+
+/** The team's crest colours (tinted disc + bright monogram + hairline), derived
+ *  from its hue. Tuned for the dark shell. */
+export function teamCrest(name: string) {
+  const h = teamHue(name);
+  return {
+    bg: `hsl(${h} 45% 20%)`,
+    fg: `hsl(${h} 82% 74%)`,
+    ring: `hsl(${h} 40% 32%)`,
+    dot: `hsl(${h} 75% 62%)`,
+  };
+}
