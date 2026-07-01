@@ -455,14 +455,20 @@ docs/                           # plan/ (design + rationale), AI_ENGINEERING_BLU
 
 ## 18. AI Engineering Blueprint
 
-This project was built with a **plan-first, research-grounded, multi-agent**
-workflow, and every AI artifact was treated as an untrusted draft and verified.
-The short version: case review → first-pass plan (Gemini, 6 real bugs caught on
-review) → grounded research (NotebookLM) → comprehensive multi-agent plan (Claude
-Code, 9 domain files) → 3-critic adversarial review (4 high / 8 med / 9 low
-defects, all resolved) → parallel implementation → a second adversarial code
-review → verification.
+Built with a **plan-first, research-grounded, multi-agent** workflow, with every AI
+artifact treated as an untrusted draft and verified before it counted. The tools:
+**Gemini 3.5 Flash** for the first-pass architecture plan (later audited) and small
+tasks; **NotebookLM** for citation-bound research on the decisions an LLM gets
+subtly wrong (RLS recursion, JWT claim freshness, anon NULL-comparison, keyset vs
+OFFSET); **Claude Opus 4.8** via Claude Code in "ultracode" multi-agent mode as the
+primary driver — deep planning, the parallel domain-agent implementation fan-out
+against a pinned contract, and the adversarial review passes (a review of the plan
+and a review of the built code); and **Claude Sonnet 5** for smaller, quicker edits.
+The plan review's findings are reconciled canonically in
+[`docs/plan/00-overview.md`](docs/plan/00-overview.md) §6.
 
-**Full write-up — tools, rulesets, prompting strategy, the reviewed-bugs table,
-and the candidate-vs-AI split — is in
-[`docs/AI_ENGINEERING_BLUEPRINT.md`](docs/AI_ENGINEERING_BLUEPRINT.md).**
+**Full write-up — tools, rulesets, prompting strategy, the reviewed-bugs table, and
+the candidate-vs-AI split — is in
+[`docs/AI_ENGINEERING_BLUEPRINT.md`](docs/AI_ENGINEERING_BLUEPRINT.md)**, backed by
+the real artifacts: [`CLAUDE.md`](CLAUDE.md), [`docs/plan/`](docs/plan), and
+[`docs/research/`](docs/research).

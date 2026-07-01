@@ -9,7 +9,7 @@
 The one-line thesis: **every AI artifact was treated as an untrusted draft and
 mechanically verified — against grounded research, a running toolchain, and
 independent adversarial critics — before it counted.** The evidence is concrete:
-two separate review passes caught **real** shipping-blockers, catalogued below.
+three separate review passes caught **real** shipping-blockers, catalogued below.
 
 ---
 
@@ -17,15 +17,17 @@ two separate review passes caught **real** shipping-blockers, catalogued below.
 
 | Tool | Role | Why this tool |
 |---|---|---|
-| **Claude Code (Opus)** | Primary agentic driver. Owns the repo: writes migrations, RLS, Server Actions, components; runs `tsc`/`next build`/`next lint`; orchestrates multi-agent fan-out and the adversarial review. | A terminal-native agent that edits files *and* runs the toolchain in one loop, so generated SQL/TS is compiled and reviewed, not pasted blind. Re-reads a checked-in ruleset (`CLAUDE.md`) every turn. |
-| **Gemini** | First-pass architecture sketch (ERD, DDL draft, RLS sketch, middleware, action skeletons). | Fast, long-context brainstorming for the *shape* of the system — cheap to iterate before committing engineering time. Treated as a proposal **to be audited**. |
-| **NotebookLM** | Grounded field research: case PDF + curated Supabase/Next.js docs as sources, answering targeted questions on the decisions an LLM gets subtly wrong (RLS recursion, JWT claim freshness, anon NULL-comparison, keyset vs OFFSET, inbox ordering). | Answers are **citation-bound to uploaded sources**, sharply lowering hallucination risk on the risky decisions. |
+| **Claude Opus 4.8** — via Claude Code, "ultracode" multi-agent mode | The primary engineering driver. Owns the repo: writes migrations, RLS, Server Actions, components; runs `tsc`/`next build`/`next lint`; and drives the multi-agent fan-out (domain agents implementing against a pinned `CONTRACTS.md`) plus the adversarial review passes — a review of the plan and a review of the built code. | A terminal-native agent that edits files *and* runs the toolchain in one loop, so generated SQL/TS is compiled and reviewed rather than pasted blind. Re-reads a checked-in ruleset (`CLAUDE.md`) every turn. The ultracode mode is what supplies the parallel domain agents and the separate critic passes. |
+| **Claude Sonnet 5** | Smaller, quicker tasks and edits — targeted fixes, mechanical refactors, doc/wording passes where the heavier planning-and-review model isn't warranted. | Cheaper and faster for well-scoped changes, so Opus 4.8 is reserved for the planning, fan-out, and adversarial work where its depth pays off. |
+| **Gemini 3.5 Flash** | First-pass architecture plan (ERD, DDL draft, RLS sketch, middleware, action skeletons) — the source later audited in `docs/research/gemini_3_5_flash_gorusleri.md` — plus some small tasks. | Fast, long-context brainstorming for the *shape* of the system, cheap to iterate before committing engineering time. Treated as a proposal **to be audited**, not trusted output — the audit of this draft is where the first-pass bugs (§5) were caught. |
+| **NotebookLM** | Grounded research: the case PDF + curated Supabase/Next.js docs as sources, answering targeted questions on the decisions an LLM gets subtly wrong (RLS recursion, JWT claim freshness, anon NULL-comparison, keyset vs OFFSET, inbox ordering). The question sets and answers are in `docs/research/`. | Answers are **citation-bound to the uploaded sources**, which lowers hallucination risk on exactly the decisions where a general model is confidently wrong. |
 
-**Why a multi-model split** rather than one model end-to-end: each model is used
-where its failure mode is cheapest. Gemini diverges fast (good for breadth, weak
-on correctness) → the throwaway first draft. NotebookLM is conservative and cited
-(good for correctness, narrow) → grades the risky decisions. Claude Code closes
-the loop by making the code compile and the tests/reviews pass.
+**Why a multi-model split** rather than one model end-to-end: each tool is used
+where its failure mode is cheapest. Gemini 3.5 Flash diverges fast (good for
+breadth, weak on correctness) → the first draft to audit; NotebookLM is
+conservative and cited → it grades the risky decisions against real docs; Claude
+Opus 4.8 (ultracode) does the planning, parallel implementation, and adversarial
+reviews, with Sonnet 5 handling the smaller edits.
 
 ---
 
@@ -58,8 +60,8 @@ diffed against grounded research and independent critics) and **stage 8** (the
 **Why plan-then-implement, and why a naming contract:** the 3-day budget rewards
 not redoing work. A pinned plan + a shared naming/interface contract
 (`docs/plan/CONTRACTS.md`) means independently-generated sections converge instead
-of drifting — the 5 parallel feature agents wrote disjoint files that compiled
-together on the first integration pass with zero interface renames.
+of drifting — the 5 parallel feature agents built disjoint files against a pinned
+contract, which is what let them integrate without interface drift.
 
 ---
 
@@ -131,8 +133,8 @@ visibility**. All resolved canonically in [`00-overview.md` §6](plan/00-overvie
 
 A 4-dimension critic workflow (RLS/security, scope coverage, app correctness,
 auth/session) reviewed the actual code; **each finding was then handed to an
-independent verifier prompted to refute it**, so only confirmed defects survived.
-Result: 5 confirmed, 0 false positives — all fixed and re-verified:
+independent verifier prompted to refute it**, so only findings that survived that
+refute step were kept. Five defects were confirmed and fixed, and re-verified:
 
 | Severity | Defect | Fix |
 |---|---|---|
@@ -165,11 +167,11 @@ resolver in `0001` before the tables. Documented inline in the migration.
 |---|---|
 | Core domain model (Tenant=Team, no profiles, public/private, follow-as-request) | **Candidate** — read from the case; the non-negotiable frame the AI works inside. |
 | "Don't use MakerKit; build minimal" | **Candidate** — the starter's account/billing/role model fights one-user-one-team + no-over-abstraction. |
-| First-pass ERD / DDL / RLS sketch | **AI (Gemini)** — speed draft, audited. |
+| First-pass ERD / DDL / RLS sketch | **AI (Gemini 3.5 Flash)** — speed draft, audited. |
 | Risky-decision research | **AI (NotebookLM), candidate-framed** — candidate wrote the questions; NotebookLM answered against cited sources. |
 | Catching the bugs (all three passes) | **Candidate-led, AI-assisted** — the decisive discipline. |
 | Locked corrections (Auth Hook, upsert, await client, column-GRANT, lateral-join inbox, denormalized is_public) | **Candidate** — final architecture calls. |
-| Implementation (migrations, RLS, actions, components, tests) | **AI (Claude Code), candidate-reviewed** — generated under `CLAUDE.md` constraints; every change gated by tsc/build/lint + adversarial review. |
+| Implementation (migrations, RLS, actions, components, tests) | **AI (Claude Opus 4.8 via Claude Code), candidate-reviewed** — generated under `CLAUDE.md` constraints; every change gated by tsc/build/lint + adversarial review. |
 
 > **One-line summary:** the candidate owns the model, the constraints, and the
 > corrections; AI owns breadth, drafting, and mechanical execution; and **every AI
@@ -180,8 +182,9 @@ resolver in `0001` before the tables. Documented inline in the migration.
 
 ## 7. Why-notes index
 
-- **Claude Code as primary driver** — closes generate → compile → review in one place.
-- **Gemini for first-pass only** — fast breadth; an auditable proposal (that's how the 6 bugs surfaced).
+- **Claude Opus 4.8 (Claude Code, ultracode)** as primary driver — closes generate → compile → review in one place, and supplies the parallel domain agents + critic passes.
+- **Claude Sonnet 5** for smaller edits — so Opus 4.8 is reserved for planning, fan-out, and review.
+- **Gemini 3.5 Flash** for the first-pass plan + small tasks — fast breadth; an auditable proposal (that's how the 6 bugs surfaced).
 - **NotebookLM for risky decisions** — citation-bound answers minimize hallucination where it's costly.
 - **`CLAUDE.md` + `CONTRACTS.md` rulesets** — encode locked decisions + prior bugs + shared interfaces so parallel agents converge and can't regress.
-- **Adversarial review with a refute-step** — independent verifiers kill plausible-but-wrong findings, so the surviving fixes are real (5/5 confirmed, 0 false positives).
+- **Adversarial review with a refute-step** — independent verifiers kill plausible-but-wrong findings, so the surviving fixes are real.
