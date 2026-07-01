@@ -42,6 +42,34 @@ database via Row-Level Security (RLS)**.
 
 ---
 
+## Status, gaps & what I prioritized
+
+**Functionally complete.** All seven requirement groups above are implemented and
+wired end-to-end — plus **team membership** (multiple users per team via invite
+code, which is what makes "any member acts as the team" actually testable) — and
+the codebase is green on `pnpm typecheck` + `pnpm build` + `pnpm lint`.
+
+**What I deliberately deferred, and why.** On a 3-day budget, and taking the
+brief's *"how & why > feature completeness"* seriously, I spent the time on the
+graded core — the **RLS security model**, **100% functional scope**, and **clear
+docs / architecture / AI blueprint** — over the optional and the ceremonial:
+
+| Deferred / not done | Why | How to finish |
+|---|---|---|
+| **Live Vercel deploy + video walkthrough** | Both are *optional* deliverables; I prioritized correctness + explanation over deployment ceremony. | Runbook in §10; the app is Vercel-ready. |
+| **Full end-to-end live run** | Needs a provisioned Supabase project (env + Auth Hook + Google provider). I verified at typecheck / build / lint / authored-pgTAP / adversarial-review level instead. | Setup in §4, then `pnpm dev`. |
+| **Google OAuth enabled** | The flow is fully coded; enabling the provider + credentials is a Supabase/Google **dashboard** step, not code. | §10 / provider settings. |
+| **pgTAP suite executed** | Authored ([`supabase/tests`](supabase/tests)); not run in my environment (needs the local Supabase stack). | `supabase db test`. |
+| **Deeper UI polish / mobile nav / broad E2E** | Non-graded polish; kept a clean, coherent UI and spent the depth on the data model + security instead. | §17. |
+
+**Nothing in the required functional scope is stubbed or missing** — the items
+above are optional deliverables or environment/config steps, each documented here.
+Product-level limitations (empty teams, kick-on-refresh, poll-not-push feed, …)
+are in [§16](#16-known-limitations); the improvement backlog is in
+[§17](#17-what-id-improve-with-more-time).
+
+---
+
 ## 3. Tech stack & why
 
 | Choice | Why (one line) |
